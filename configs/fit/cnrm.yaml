@@ -1,0 +1,10 @@
+experiment: irt-family-fit
+dataset: datasets/random500/f221ae4be49a
+link: identity
+em:
+    n_nodes: 31
+    tol: 1.0e-4
+    max_iter: 200
+    init: person_mean_ols
+diagnostic:
+    ref_nodes: 201

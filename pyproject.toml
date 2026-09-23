@@ -16,10 +16,6 @@ dependencies = [
     "pyyaml>=6.0.3",
 ]
 
-[project.scripts]
-irt-build-dataset = "irt_compare.cli.build_dataset:main"
-irt-fit = "irt_compare.cli.fit:main"
-
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
