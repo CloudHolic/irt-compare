@@ -8,6 +8,8 @@ authors = [
 ]
 requires-python = ">=3.14"
 dependencies = [
+    "jax[cuda13]>=0.11.2",
+    "mlflow==3.16.1",
     "numpy>=2.5.3",
     "polars>=1.44.2",
     "psycopg[binary]>=3.3.6",
@@ -16,6 +18,7 @@ dependencies = [
 
 [project.scripts]
 irt-build-dataset = "irt_compare.cli.build_dataset:main"
+irt-fit = "irt_compare.cli.fit:main"
 
 [dependency-groups]
 dev = [
