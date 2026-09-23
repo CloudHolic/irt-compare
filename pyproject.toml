@@ -1,0 +1,42 @@
+[project]
+name = "irt-compare"
+version = "0.1.0"
+description = "Fits IRT families for bounded continuous responses to osu!mania data, tracked in MLflow."
+readme = "README.md"
+authors = [
+    { name = "CloudHolic", email = "cloudholic@pm.me" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "numpy>=2.5.3",
+    "polars>=1.44.2",
+    "psycopg[binary]>=3.3.6",
+    "pyyaml>=6.0.3",
+]
+
+[project.scripts]
+irt-build-dataset = "irt_compare.cli.build_dataset:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.16.8",
+]
+
+[build-system]
+requires = ["hatchling>=1.32.4"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/irt_compare"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+
+[tool.ruff.format]
+indent-style = "tab"
+quote-style = "double"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "A", "B", "C4", "N", "PIE", "RET", "RUF", "SIM", "UP", "NPY"]

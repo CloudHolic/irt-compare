@@ -1,0 +1,6 @@
+name: random500
+n_items: 500
+min_item_responses: 2
+n_persons: 4000
+test_fraction: 0.2
+seed: 20260923
