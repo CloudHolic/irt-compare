@@ -35,7 +35,11 @@ class EMConfig:
 
 @dataclass(frozen=True)
 class EMResult:
-	"""Item estimates, the marginal log-likelihood per iteration, and train-person EAPs."""
+	"""Item estimates, the marginal log-likelihood per iteration, and train-person EAPs.
+
+	When an update turns non-finite, EM stops there: the estimates are the last finite ones
+	and `degenerate_items` lists the items whose update failed.
+	"""
 
 	alpha: np.ndarray
 	beta: np.ndarray
@@ -43,8 +47,14 @@ class EMResult:
 	loglik: np.ndarray
 	n_iter: int
 	converged: bool
+	degenerate_items: np.ndarray
 	eap: np.ndarray
 	psd: np.ndarray
+
+	@property
+	def degenerate(self) -> bool:
+		"""True when EM stopped because an update turned non-finite."""
+		return self.degenerate_items.size > 0
 
 
 def gh_nodes(n: int) -> tuple[Array, Array]:
@@ -106,11 +116,21 @@ def fit_em(
 
 	loglik = []
 	converged = False
+	degenerate_items = np.array([], dtype=np.int64)
+
 	for _ in range(config.max_iter):
 		new_alpha, new_beta, new_sigma, ll = _em_step(
 			p, i, xs, n_persons, n_items, alpha, beta, sigma, nodes, log_w
 		)
 		loglik.append(float(ll))
+
+		finite = jnp.isfinite(new_alpha) & jnp.isfinite(new_beta) & jnp.isfinite(new_sigma)
+		if not bool(finite.all()):
+			# Nothing in MML bounds sigma away from 0: an item with too few responses drives it
+			# there until the posterior over the nodes collapses and the update is 0/0.
+			degenerate_items = np.flatnonzero(~np.asarray(finite))
+			break
+
 		change = max(
 			float(jnp.abs(new_alpha - alpha).max()),
 			float(jnp.abs(new_beta - beta).max()),
@@ -123,7 +143,7 @@ def fit_em(
 
 	post, _ = _posterior(p, i, xs, n_persons, alpha, beta, sigma, nodes, log_w)
 	eap = post @ nodes
-	psd = jnp.sqrt(post @ nodes**2 - eap**2)
+	psd = jnp.sqrt((post * (nodes[None, :] - eap[:, None]) ** 2).sum(axis=1))
 
 	return EMResult(
 		alpha=np.asarray(alpha),
@@ -132,6 +152,7 @@ def fit_em(
 		loglik=np.asarray(loglik),
 		n_iter=len(loglik),
 		converged=converged,
+		degenerate_items=degenerate_items,
 		eap=np.asarray(eap),
 		psd=np.asarray(psd),
 	)
