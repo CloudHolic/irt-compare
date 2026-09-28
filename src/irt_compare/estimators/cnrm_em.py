@@ -17,29 +17,30 @@ from ..models.cnrm import log_k
 from ..models.partition import partition
 
 INITS = ("person_mean_ols",)
+QUADRATURES = ("adaptive",)
+_NEWTON_STEPS = 25
 
 
 @dataclass(frozen=True)
 class EMConfig:
-	"""Quadrature nodes, stopping rule and initial-value method."""
+	"""Quadrature, stopping rule and initial-value method."""
 
 	n_nodes: int
 	tol: float
 	max_iter: int
 	init: str
+	quadrature: str
 
 	def __post_init__(self) -> None:
 		if self.init not in INITS:
 			raise ValueError(f"init must be one of {INITS}, got {self.init!r}")
+		if self.quadrature not in QUADRATURES:
+			raise ValueError(f"quadtrature must be one of {QUADRATURES}, got {self.quadrature!r}")
 
 
 @dataclass(frozen=True)
 class EMResult:
-	"""Item estimates, the marginal log-likelihood per iteration, and train-person EAPs.
-
-	When an update turns non-finite, EM stops there: the estimates are the last finite ones
-	and `degenerate_items` lists the items whose update failed.
-	"""
+	"""Item estimates, the marginal log-likelihood per iteration, and train-person EAPs."""
 
 	alpha: np.ndarray
 	beta: np.ndarray
@@ -57,19 +58,10 @@ class EMResult:
 		return self.degenerate_items.size > 0
 
 
-def gh_nodes(n: int) -> tuple[Array, Array]:
-	"""Gauss-Hermite nodes and log weights for an expectation under N(0, 1)."""
-	t, w = np.polynomial.hermite.hermgauss(n)
-	with np.errstate(divide="ignore"):
-		log_w = np.log(w) - 0.5 * np.log(np.pi)
-
-	return jnp.asarray(np.sqrt(2.0) * t), jnp.asarray(log_w)
-
-
 def init_person_mean_ols(
 	person: np.ndarray, item: np.ndarray, x: np.ndarray, n_persons: int, n_items: int
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-	"""Item-wise OLS of responses on standardized persom means (slope, intercept, residual SE)."""
+	"""Item-wise OLS of responses on standardized person means (slope, intercept, residual SE)."""
 	mean_p = np.bincount(person, x, n_persons) / np.bincount(person, minlength=n_persons)
 	t = ((mean_p - mean_p.mean()) / mean_p.std())[person]
 
@@ -107,20 +99,23 @@ def fit_em(
 	n_items: int,
 	config: EMConfig,
 ) -> EMResult:
-	"""Runs EM until every parameter moves less than `tol` or `max_iter` is reahced."""
-	nodes, log_w = gh_nodes(config.n_nodes)
+	"""Runs EM until every parameter moves less than `tol` or `max_iter` is reached."""
+	x_h, log_w_h = _hermite(config.n_nodes)
 	p, i, xs = jnp.asarray(person), jnp.asarray(item), jnp.asarray(x)
 	alpha, beta, sigma = (
 		jnp.asarray(v) for v in init_person_mean_ols(person, item, x, n_persons, n_items)
 	)
+	mode = jnp.zeros(n_persons)
 
 	loglik = []
 	converged = False
 	degenerate_items = np.array([], dtype=np.int64)
 
 	for _ in range(config.max_iter):
+		mode, scale = _modes(p, i, xs, alpha, beta, sigma, mode)
+		theta, log_w = _adaptive_nodes(mode, scale, x_h, log_w_h)
 		new_alpha, new_beta, new_sigma, ll = _em_step(
-			p, i, xs, n_persons, n_items, alpha, beta, sigma, nodes, log_w
+			p, i, xs, n_persons, n_items, alpha, beta, sigma, theta, log_w
 		)
 		loglik.append(float(ll))
 
@@ -137,13 +132,16 @@ def fit_em(
 			float(jnp.abs(new_sigma - sigma).max()),
 		)
 		alpha, beta, sigma = new_alpha, new_beta, new_sigma
+
 		if change < config.tol:
 			converged = True
 			break
 
-	post, _ = _posterior(p, i, xs, n_persons, alpha, beta, sigma, nodes, log_w)
-	eap = post @ nodes
-	psd = jnp.sqrt((post * (nodes[None, :] - eap[:, None]) ** 2).sum(axis=1))
+	mode, scale = _modes(p, i, xs, alpha, beta, sigma, mode)
+	theta, log_w = _adaptive_nodes(mode, scale, x_h, log_w_h)
+	post, _ = _posterior(p, i, xs, n_persons, alpha, beta, sigma, theta, log_w)
+	eap = (post * theta).sum(axis=1)
+	psd = jnp.sqrt((post * (theta - eap[:, None]) ** 2).sum(axis=1))
 
 	return EMResult(
 		alpha=np.asarray(alpha),
@@ -168,37 +166,72 @@ def person_loglik(
 	sigma: np.ndarray,
 	n_nodes: int,
 ) -> np.ndarray:
-	"""Each person's log marginal likelihood by Gauss-Hermite with `n_nodes` nodes."""
-	nodes, log_w = gh_nodes(n_nodes)
-	_, log_marginal = _posterior(
-		jnp.asarray(person),
-		jnp.asarray(item),
-		jnp.asarray(x),
-		n_persons,
-		jnp.asarray(alpha),
-		jnp.asarray(beta),
-		jnp.asarray(sigma),
-		nodes,
-		log_w,
-	)
+	"""Each person's log marginal likelihood by Adaptive Gauss-Hermite with `n_nodes` nodes."""
+	p, i, xs = jnp.asarray(person), jnp.asarray(item), jnp.asarray(x)
+	a, b, s = jnp.asarray(alpha), jnp.asarray(beta), jnp.asarray(sigma)
+	mode, scale = _modes(p, i, xs, a, b, s, jnp.zeros(n_persons))
+	theta, log_w = _adaptive_nodes(mode, scale, *_hermite(n_nodes))
+	_, log_marginal = _posterior(p, i, xs, n_persons, a, b, s, theta, log_w)
 
 	return np.asarray(log_marginal)
 
 
-def _node_loglik(
-	person: Array,
-	item: Array,
-	x: Array,
-	n_persons: int,
-	alpha: Array,
-	beta: Array,
-	sigma: Array,
-	nodes: Array,
-) -> Array:
-	"""log L_p(t_h): each person's log-likelihood at every node, shape (persons, nodes)."""
-	lk = log_k(x[:, None], nodes[None, :], alpha[item, None], beta[item, None], sigma[item, None])
+def _hermite(n: int) -> tuple[Array, Array]:
+	"""Gauss-Hermite nodes and log weights for the kernel exp(-x^2)."""
+	x, w = np.polynomial.hermite.hermgauss(n)
+	with np.errstate(divide="ignore"):
+		log_w = np.log(w)
 
-	return jax.ops.segment_sum(lk, person, num_segments=n_persons)
+	return jnp.asarray(x), jnp.asarray(log_w)
+
+
+def _log_posterior(
+	theta: Array, person: Array, item: Array, x: Array, alpha: Array, beta: Array, sigma: Array
+) -> Array:
+	"""Sum over persons of log L_p(theta_p) + log phi(theta_p)."""
+	cells = log_k(x, theta[person], alpha[item], beta[item], sigma[item]).sum()
+	return cells + norm.logpdf(theta).sum()
+
+
+@jax.jit
+def _modes(
+	person: Array, item: Array, x: Array, alpha: Array, beta: Array, sigma: Array, start: Array
+) -> tuple[Array, Array]:
+	"""Each person's posterior mode of theta and the scale (-f'')^(-1/2) there, by Newton."""
+	grad = jax.grad(_log_posterior)
+
+	def curvature(theta: Array) -> Array:
+		# The log posterior is a sum of one-person terms, so its Hessian is diagonal and one
+		# Hessian-vector product with ones returns that diagonal. The prior keeps it <= 1.
+		return jax.jvp(
+			lambda t: grad(t, person, item, x, alpha, beta, sigma),
+			(theta,),
+			(jnp.ones_like(theta),),
+		)[1]
+
+	def step(_: int, theta: Array) -> Array:
+		g = grad(theta, person, item, x, alpha, beta, sigma)
+
+		# Clipped so a start far from the mode cannot overshoot; near it the steps are small.
+		return theta - jnp.clip(g / curvature(theta), -2.0, 2.0)
+
+	mode = jax.lax.fori_loop(0, _NEWTON_STEPS, step, start)
+	return mode, 1.0 / jnp.sqrt(-curvature(mode))
+
+
+def _adaptive_nodes(mode: Array, scale: Array, x_h: Array, log_w_h: Array) -> tuple[Array, Array]:
+	"""Per-person nodes theta_ph = mode_p + sqrt(2) scale_p x_h, shape (persons, nodes), and
+	log weights such that sum_h w_ph g(theta_ph) approximates the integral of g(theta) phi(theta).
+	"""
+	theta = mode[:, None] + jnp.sqrt(2.0) * scale[:, None] * x_h[None, :]
+	log_w = (
+		log_w_h[None, :]
+		+ x_h[None, :] ** 2
+		+ jnp.log(jnp.sqrt(2.0) * scale)[:, None]
+		+ norm.logpdf(theta)
+	)
+
+	return theta, log_w
 
 
 @partial(jax.jit, static_argnames=("n_persons",))
@@ -210,11 +243,12 @@ def _posterior(
 	alpha: Array,
 	beta: Array,
 	sigma: Array,
-	nodes: Array,
+	theta: Array,
 	log_w: Array,
 ) -> tuple[Array, Array]:
-	"""Posterior weights over nodes  and each person's log marginal likelihood."""
-	joint = _node_loglik(person, item, x, n_persons, alpha, beta, sigma, nodes) + log_w
+	"""Posterior weights over each person's nodes and each log marginal likelihood."""
+	lk = log_k(x[:, None], theta[person], alpha[item, None], beta[item, None], sigma[item, None])
+	joint = jax.ops.segment_sum(lk, person, num_segments=n_persons) + log_w
 	log_marginal = logsumexp(joint, axis=1)
 
 	return jnp.exp(joint - log_marginal[:, None]), log_marginal
@@ -230,14 +264,15 @@ def _em_step(
 	alpha: Array,
 	beta: Array,
 	sigma: Array,
-	nodes: Array,
+	theta: Array,
 	log_w: Array,
 ) -> tuple[Array, Array, Array, Array]:
 	"""One E-step and M-step."""
-	post, log_marginal = _posterior(person, item, x, n_persons, alpha, beta, sigma, nodes, log_w)
+	post, log_marginal = _posterior(person, item, x, n_persons, alpha, beta, sigma, theta, log_w)
 
+	t = theta[person]
 	a, b, s = alpha[item, None], beta[item, None], sigma[item, None]
-	mu = a * nodes[None, :] + b
+	mu = a * t + b
 
 	z0 = -mu / s
 	z1 = (1.0 - mu) / s
@@ -256,7 +291,6 @@ def _em_step(
 	)
 
 	w = post[person]
-	t = nodes[None, :]
 	n_i = jax.ops.segment_sum(jnp.ones_like(x), item, num_segments=n_items)
 
 	def mean(v: Array) -> Array:

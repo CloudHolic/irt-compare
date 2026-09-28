@@ -1,0 +1,8 @@
+name: core300
+n_items: 330
+min_item_responses: 100
+min_person_responses: 2
+min_item_train_responses: 2
+n_persons: 5500
+test_fraction: 0.2
+seed: 20260928

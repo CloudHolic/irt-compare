@@ -1,6 +1,6 @@
 family: zoi-simplex
 experiment: irt-family-fit
-dataset: datasets/random500/f221ae4be49a
+dataset: datasets/core300/cb2ec46b1d37
 prior:
     scale: 10.0
 nuts:

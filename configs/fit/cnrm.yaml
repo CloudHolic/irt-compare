@@ -1,11 +1,12 @@
 family: cnrm
 experiment: irt-family-fit
-dataset: datasets/random500/f221ae4be49a
+dataset: datasets/core300/cb2ec46b1d37
 link: identity
 em:
     n_nodes: 31
     tol: 1.0e-4
     max_iter: 200
     init: person_mean_ols
+    quadrature: adaptive
 diagnostic:
     ref_nodes: 201

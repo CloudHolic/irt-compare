@@ -20,9 +20,14 @@ RULES = {
 	"score": "score / (1e6 * 0.5 if NF * 0.5 if HT).",
 	"dedup": "Per (user, item) each response keeps its own best play: highest accuracy for acc, "
 	"highest normalized score for score. The two may come from different plays.",
-	"persons": "Drawn uniformly from the random pool and split into train and test; drawn "
-	"persons without a response on the picked items are then dropped.",
-	"eligibility": "An item is eligible when it has at least min_item_responses train responses.",
+	"core": "k-core of the pool: items with at least min_item_responses responses and persons "
+	"with at least min_person_responses, repeated until neither changes.",
+	"items": "Drawn uniformly within each key mode of the core; key modes get items in "
+	"proportion to their core counts, at least one each.",
+	"persons": "Persons with at least min_person_responses responses on the drawn items; "
+	"n_persons of them drawn uniformly and split into train and test.",
+	"final": "k-core of the drawn sample: items with at least min_item_train_responses train "
+	"responses and persons with at least min_person_responses, repeated until neither changes.",
 	"boundary": "A response is an endpoint iff it equals 0.0 or 1.0 exactly; no tolerance.",
 }
 
@@ -38,8 +43,7 @@ def make_manifest(
 	ingest_log: list[dict[str, Any]],
 	eligible: dict[int, int],
 	allocation: dict[int, int],
-	pool_size: int,
-	n_drawn: int,
+	stages: dict[str, dict[str, int]],
 	items: pl.DataFrame,
 	persons: pl.DataFrame,
 	responses: pl.DataFrame,
@@ -47,6 +51,7 @@ def make_manifest(
 	"""The hashed part of the manifest: everything but the hash and build time."""
 	split = responses.join(persons.select("person_idx", "split"), on="person_idx")
 	train = split.filter(pl.col("split") == "train")
+	kept = dict(items.group_by("keys").len().iter_rows())
 	return {
 		"config": asdict(config),
 		"seed_streams": list(STREAMS),
@@ -55,15 +60,13 @@ def make_manifest(
 		"views": view_definitions,
 		"ingest_log": ingest_log,
 		"keys": {
-			str(k): {"eligible": eligible[k], "allocated": n} for k, n in sorted(allocation.items())
+			str(k): {"core": eligible[k], "allocated": n, "kept": kept.get(k, 0)}
+			for k, n in sorted(allocation.items())
 		},
 		"counts": {
+			"stages": stages,
 			"items": items.height,
-			"persons": {
-				"pool": pool_size,
-				"drawn": n_drawn,
-				**{s: persons.filter(pl.col("split") == s).height for s in ("train", "test")},
-			},
+			"persons": {s: persons.filter(pl.col("split") == s).height for s in ("train", "test")},
 			"responses": {s: split.filter(pl.col("split") == s).height for s in ("train", "test")},
 		},
 		"train_endpoint_fraction": {

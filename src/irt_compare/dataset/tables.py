@@ -5,14 +5,26 @@ import polars as pl
 RESPONSES = ("acc", "score")
 
 
-def count_train_responses(cells: pl.DataFrame) -> pl.DataFrame:
-	"""Train responses per (beatmap, rate_group)."""
-	return (
-		cells.filter(pl.col("split") == "train")
-		.group_by("beatmap_id", "rate_group", "keys")
-		.agg(pl.len().cast(pl.Int64).alias("n_train"))
-		.sort("keys", "beatmap_id", "rate_group")
-	)
+def k_core(
+	cells: pl.DataFrame, min_item: int, min_person: int, item_counted: pl.Expr
+) -> pl.DataFrame:
+	"""Drops items and persons below their response floors until neither changes."""
+	item_key = ["beatmap_id", "rate_group"]
+	while True:
+		item_n = cells.filter(item_counted).group_by(item_key).len()
+		kept = cells.join(
+			item_n.filter(pl.col("len") >= min_item).select(item_key), on=item_key, how="semi"
+		)
+
+		person_n = kept.group_by("user_id").len()
+		kept = kept.join(
+			person_n.filter(pl.col("len") >= min_person).select("user_id"), on="user_id", how="semi"
+		)
+
+		if kept.height == cells.height:
+			return kept
+
+		cells = kept
 
 
 def build_tables(

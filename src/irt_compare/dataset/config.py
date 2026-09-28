@@ -13,6 +13,8 @@ class DatasetConfig:
 	name: str
 	n_items: int
 	min_item_responses: int
+	min_person_responses: int
+	min_item_train_responses: int
 	n_persons: int | None
 	test_fraction: float
 	seed: int
@@ -20,8 +22,9 @@ class DatasetConfig:
 	def __post_init__(self) -> None:
 		if self.n_items < 1:
 			raise ValueError(f"n_items must be positive, got {self.n_items}")
-		if self.min_item_responses < 1:
-			raise ValueError(f"min_item_responses must be positive, got {self.min_item_responses}")
+		for field in ("min_item_responses", "min_person_responses", "min_item_train_responses"):
+			if getattr(self, field) < 1:
+				raise ValueError(f"{field} must be positive, got {getattr(self, field)}")
 		if self.n_persons is not None and self.n_persons < 1:
 			raise ValueError(f"n_persons must be positive or null, got {self.n_persons}")
 		if not 0.0 < self.test_fraction < 1.0:

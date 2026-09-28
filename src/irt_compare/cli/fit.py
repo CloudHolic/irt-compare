@@ -52,13 +52,13 @@ def _flatten(tree: dict[str, Any], prefix: str = "") -> dict[str, Any]:
 	return flat
 
 
-def _tags(resolved: dict[str, Any], estimator: str) -> dict[str, str]:
+def _tags(resolved: dict[str, Any], estimator: str, spec_deviation: str) -> dict[str, str]:
 	return {
 		"family": resolved["family"],
 		"response": resolved["response"],
 		"estimator": estimator,
 		"dataset_hash": resolved["dataset_hash"],
-		"spec_deviation": "none",
+		"spec_deviation": spec_deviation,
 	}
 
 
@@ -72,7 +72,7 @@ def _fit_cnrm(resolved: dict[str, Any], data: TrainData) -> str:
 	em = EMConfig(**resolved["em"])
 	run_name = f"cnrm-{resolved['response']}"
 	with tracking.fit_run(
-		resolved["experiment"], run_name, _tags(resolved, "em-mml"), _flatten(resolved)
+		resolved["experiment"], run_name, _tags(resolved, "em-mml", "aghq"), _flatten(resolved)
 	) as run_id:
 		start = time.perf_counter()
 		result = fit_em(data.person, data.item, data.x, data.n_persons, data.n_items, em)
@@ -146,7 +146,7 @@ def _fit_zoi(resolved: dict[str, Any], data: TrainData) -> str:
 	nuts = NUTSConfig(**resolved["nuts"])
 	run_name = f"{resolved['family']}-{resolved['response']}"
 	with tracking.fit_run(
-		resolved["experiment"], run_name, _tags(resolved, "nuts"), _flatten(resolved)
+		resolved["experiment"], run_name, _tags(resolved, "nuts", "none"), _flatten(resolved)
 	) as run_id:
 		start = time.perf_counter()
 		result = fit_nuts(
