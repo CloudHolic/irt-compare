@@ -9,10 +9,12 @@ import polars as pl
 
 from .tables import RESPONSES
 
+SPLITS = ("train", "test")
+
 
 @dataclass(frozen=True)
 class TrainData:
-	"""Train cells of one response variable."""
+	"""The cells of one split and one response variable. `person` indexes the split's persons."""
 
 	person: np.ndarray
 	item: np.ndarray
@@ -26,8 +28,15 @@ class TrainData:
 
 def load_train(path: Path, response: str) -> TrainData:
 	"""Loads the train split."""
+	return load_split(path, response, "train")
+
+
+def load_split(path: Path, response: str, split: str) -> TrainData:
+	"""Loads one split; the test persons never enter a fit and are what held-out scores use."""
 	if response not in RESPONSES:
 		raise ValueError(f"response must be one of {RESPONSES}, got {response!r}")
+	if split not in SPLITS:
+		raise ValueError(f"split must be one of {SPLITS}, got {split!r}")
 
 	manifest = json.loads((path / "manifest.json").read_text(encoding="utf-8"))
 	if manifest["hash"] != path.name:
@@ -35,7 +44,7 @@ def load_train(path: Path, response: str) -> TrainData:
 
 	persons = (
 		pl.read_parquet(path / "persons.parquet")
-		.filter(pl.col("split") == "train")
+		.filter(pl.col("split") == split)
 		.sort("person_idx")
 		.with_row_index("p")
 		.with_columns(pl.col("p").cast(pl.Int64))

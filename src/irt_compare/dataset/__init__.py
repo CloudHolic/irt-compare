@@ -2,7 +2,16 @@
 
 from .build import build
 from .config import DatasetConfig, load_config
-from .load import TrainData, load_train
+from .load import SPLITS, TrainData, load_split, load_train
 from .tables import RESPONSES
 
-__all__ = ["RESPONSES", "DatasetConfig", "TrainData", "build", "load_config", "load_train"]
+__all__ = [
+	"RESPONSES",
+	"SPLITS",
+	"DatasetConfig",
+	"TrainData",
+	"build",
+	"load_config",
+	"load_split",
+	"load_train",
+]

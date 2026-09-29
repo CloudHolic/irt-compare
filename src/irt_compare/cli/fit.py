@@ -1,6 +1,7 @@
 """Command-line entry point: fits one family to one response variable and logs the run."""
 
 import argparse
+import json
 import time
 from pathlib import Path
 from typing import Any
@@ -12,8 +13,16 @@ import yaml
 
 from irt_compare import tracking
 from irt_compare.dataset import RESPONSES, TrainData, load_train
-from irt_compare.estimators.cnrm_em import EMConfig, EMResult, fit_em, person_loglik
+from irt_compare.estimators import map_aghq
+from irt_compare.estimators.cnrm_em import (
+	EMConfig,
+	EMResult,
+	fit_em,
+	init_person_mean_ols,
+	person_loglik,
+)
 from irt_compare.estimators.nuts import NUTSConfig, NUTSResult, fit_nuts, summarize
+from irt_compare.models.transform import TransformSpec
 from irt_compare.models.zoi import COORDS
 from irt_compare.models.zoi import FAMILIES as ZOI_FAMILIES
 
@@ -31,7 +40,9 @@ def main() -> None:
 	resolved = {**raw, "response": args.response, "dataset_hash": data.dataset_hash}
 
 	family = raw["family"]
-	if family == "cnrm":
+	if raw.get("estimator") == "map":
+		run_id = _fit_map(resolved, data)
+	elif family == "cnrm":
 		run_id = _fit_cnrm(resolved, data)
 	elif family in ZOI_FAMILIES:
 		run_id = _fit_zoi(resolved, data)
@@ -228,6 +239,114 @@ def _write_zoi(
 			"value": theta_draws.reshape(-1),
 		}
 	).write_parquet(out / "draws_persons.parquet")
+
+
+def _fit_map(resolved: dict[str, Any], data: TrainData) -> str:
+	family = resolved["family"]
+	spec = TransformSpec.from_config(resolved.get("transform")) if family == "cnrm" else None
+	model = map_aghq.Model(family, spec)
+	config = map_aghq.MAPConfig(**resolved["map"], prior_scale=resolved["prior"]["scale"])
+	init = _map_init(resolved, data, model)
+
+	deviation = "estimator" if spec is None or spec.kind == "linear" else "estimator,transform"
+	suffix = f"-{spec.kind}" if spec is not None else ""
+	run_name = f"{family}{suffix}-map-{resolved['response']}"
+	with tracking.fit_run(
+		resolved["experiment"],
+		run_name,
+		_tags(resolved, "map-aghq", deviation),
+		_flatten(resolved),
+	) as run_id:
+		start = time.perf_counter()
+		result = map_aghq.fit_map(
+			model, data.person, data.item, data.x, data.n_persons, init, config
+		)
+		runtime = time.perf_counter() - start
+
+		tracking.log_metrics(
+			run_id,
+			{
+				"runtime_s": runtime,
+				"best_loss": result.best_loss,
+				"best_step": result.best_step,
+				"drop_last": result.drop_last,
+				"log_marginal": result.log_marginal,
+			},
+			{"loss": result.loss[:: max(1, len(result.loss) // 1000)].tolist()},
+		)
+		tracking.log_artifacts(run_id, lambda out: _write_map(out, resolved, data, model, result))
+	return run_id
+
+
+def _map_init(resolved: dict[str, Any], data: TrainData, model: map_aghq.Model) -> dict[str, Any]:
+	"""`init` is `moments` / `person_mean_ols`, or a local directory of a finished run to start
+	from (a NUTS run's posterior means for a ZOI family, an EM run for the CNRM). `{response}`
+	in the path is filled in, so one config serves both response variables.
+	"""
+	init = str(
+		resolved.get("init", "moments" if model.family in ZOI_FAMILIES else "person_mean_ols")
+	)
+
+	if model.family == "cnrm":
+		assert model.transform is not None
+		if init == "person_mean_ols":
+			alpha, beta, sigma = init_person_mean_ols(
+				data.person, data.item, data.x, data.n_persons, data.n_items
+			)
+		else:
+			items = pl.read_parquet(Path(init.format(**resolved)) / "items.parquet").sort(
+				"item_idx"
+			)
+			alpha, beta, sigma = (items[c].to_numpy() for c in ("alpha", "beta", "sigma"))
+		return map_aghq.cnrm_params(alpha, beta, sigma, model.transform)
+
+	if init == "moments":
+		return map_aghq.zoi_moment_init(model.family, data.item, data.x, data.n_items)
+	summary = pl.read_parquet(Path(init.format(**resolved)) / "items_summary.parquet")
+	wide = summary.pivot(on="coord", index="item_idx", values="mean").sort("item_idx")
+	return map_aghq.zoi_params(*(wide[c].to_numpy() for c in COORDS[model.family]))
+
+
+def _write_map(
+	out: Path,
+	resolved: dict[str, Any],
+	data: TrainData,
+	model: map_aghq.Model,
+	result: map_aghq.MAPResult,
+) -> None:
+	_write_config(out, resolved)
+	p = result.params
+
+	if model.family == "cnrm":
+		assert model.transform is not None
+		items = {
+			"alpha": np.exp(p["log_alpha"]),
+			"beta": p["beta"],
+			"sigma": np.exp(p["log_sigma"]),
+		}
+		knots = np.asarray(model.transform.knots)
+		transform = {
+			"kind": model.transform.kind,
+			"knots": knots.tolist(),
+			"raw": np.atleast_1d(p["transform"]).tolist(),
+			"exponent_at_knots": np.asarray(
+				model.transform.exponent(p["transform"], knots)
+			).tolist(),
+		}
+		(out / "transform.json").write_text(json.dumps(transform, indent=2), encoding="utf-8")
+	else:
+		tau = map_aghq.zoi_tau(p)
+		items = {c: np.asarray(v) for c, v in zip(COORDS[model.family], tau, strict=True)}
+
+	pl.DataFrame({"item_idx": np.arange(data.n_items), **items}).write_parquet(
+		out / "items.parquet"
+	)
+	pl.DataFrame(
+		{"person_idx": data.person_idx, "eap": result.eap, "psd": result.psd}
+	).write_parquet(out / "persons.parquet")
+	pl.DataFrame({"step": np.arange(len(result.loss)), "loss": result.loss}).write_parquet(
+		out / "trace.parquet"
+	)
 
 
 if __name__ == "__main__":

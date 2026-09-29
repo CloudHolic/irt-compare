@@ -15,6 +15,7 @@ from jax.scipy.stats import norm
 
 from ..models.cnrm import log_k
 from ..models.partition import partition
+from .quadrature import adaptive_nodes, hermite
 
 INITS = ("person_mean_ols",)
 QUADRATURES = ("adaptive",)
@@ -100,7 +101,7 @@ def fit_em(
 	config: EMConfig,
 ) -> EMResult:
 	"""Runs EM until every parameter moves less than `tol` or `max_iter` is reached."""
-	x_h, log_w_h = _hermite(config.n_nodes)
+	x_h, log_w_h = hermite(config.n_nodes)
 	p, i, xs = jnp.asarray(person), jnp.asarray(item), jnp.asarray(x)
 	alpha, beta, sigma = (
 		jnp.asarray(v) for v in init_person_mean_ols(person, item, x, n_persons, n_items)
@@ -113,7 +114,7 @@ def fit_em(
 
 	for _ in range(config.max_iter):
 		mode, scale = _modes(p, i, xs, alpha, beta, sigma, mode)
-		theta, log_w = _adaptive_nodes(mode, scale, x_h, log_w_h)
+		theta, log_w = adaptive_nodes(mode, scale, x_h, log_w_h)
 		new_alpha, new_beta, new_sigma, ll = _em_step(
 			p, i, xs, n_persons, n_items, alpha, beta, sigma, theta, log_w
 		)
@@ -138,7 +139,7 @@ def fit_em(
 			break
 
 	mode, scale = _modes(p, i, xs, alpha, beta, sigma, mode)
-	theta, log_w = _adaptive_nodes(mode, scale, x_h, log_w_h)
+	theta, log_w = adaptive_nodes(mode, scale, x_h, log_w_h)
 	post, _ = _posterior(p, i, xs, n_persons, alpha, beta, sigma, theta, log_w)
 	eap = (post * theta).sum(axis=1)
 	psd = jnp.sqrt((post * (theta - eap[:, None]) ** 2).sum(axis=1))
@@ -170,19 +171,10 @@ def person_loglik(
 	p, i, xs = jnp.asarray(person), jnp.asarray(item), jnp.asarray(x)
 	a, b, s = jnp.asarray(alpha), jnp.asarray(beta), jnp.asarray(sigma)
 	mode, scale = _modes(p, i, xs, a, b, s, jnp.zeros(n_persons))
-	theta, log_w = _adaptive_nodes(mode, scale, *_hermite(n_nodes))
+	theta, log_w = adaptive_nodes(mode, scale, *hermite(n_nodes))
 	_, log_marginal = _posterior(p, i, xs, n_persons, a, b, s, theta, log_w)
 
 	return np.asarray(log_marginal)
-
-
-def _hermite(n: int) -> tuple[Array, Array]:
-	"""Gauss-Hermite nodes and log weights for the kernel exp(-x^2)."""
-	x, w = np.polynomial.hermite.hermgauss(n)
-	with np.errstate(divide="ignore"):
-		log_w = np.log(w)
-
-	return jnp.asarray(x), jnp.asarray(log_w)
 
 
 def _log_posterior(
@@ -217,21 +209,6 @@ def _modes(
 
 	mode = jax.lax.fori_loop(0, _NEWTON_STEPS, step, start)
 	return mode, 1.0 / jnp.sqrt(-curvature(mode))
-
-
-def _adaptive_nodes(mode: Array, scale: Array, x_h: Array, log_w_h: Array) -> tuple[Array, Array]:
-	"""Per-person nodes theta_ph = mode_p + sqrt(2) scale_p x_h, shape (persons, nodes), and
-	log weights such that sum_h w_ph g(theta_ph) approximates the integral of g(theta) phi(theta).
-	"""
-	theta = mode[:, None] + jnp.sqrt(2.0) * scale[:, None] * x_h[None, :]
-	log_w = (
-		log_w_h[None, :]
-		+ x_h[None, :] ** 2
-		+ jnp.log(jnp.sqrt(2.0) * scale)[:, None]
-		+ norm.logpdf(theta)
-	)
-
-	return theta, log_w
 
 
 @partial(jax.jit, static_argnames=("n_persons",))

@@ -1,0 +1,16 @@
+family: cnrm
+estimator: map
+experiment: irt-family-fit
+dataset: datasets/core300/cb2ec46b1d37
+transform:
+    kind: linear
+prior:
+    scale: 10.0
+map:
+    n_nodes: 21
+    steps: 3000
+    learning_rate: 0.005
+    final_lr_fraction: 0.02
+    scan_every: 20
+# person_mean_ols, or a finished EM run to start from, e.g. artifacts/cnrm-{response}
+init: person_mean_ols

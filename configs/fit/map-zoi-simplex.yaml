@@ -1,0 +1,14 @@
+family: zoi-simplex
+estimator: map
+experiment: irt-family-fit
+dataset: datasets/core300/cb2ec46b1d37
+prior:
+    scale: 10.0
+map:
+    n_nodes: 21
+    steps: 4000
+    learning_rate: 0.02
+    final_lr_fraction: 0.05
+    scan_every: 20
+# moments, or a finished NUTS run to start from, e.g. artifacts/zoi-simplex-{response}
+init: moments

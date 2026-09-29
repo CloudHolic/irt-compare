@@ -71,13 +71,21 @@ def _log_beta(x: Array, eta: Array, dispersion: Array) -> Array:
 
 
 def _log_simplex(x: Array, eta: Array, dispersion: Array) -> Array:
-	mu = sigmoid(eta)
-	scale = 2.0 * jnp.exp(dispersion) * x * (1.0 - x) * mu**2 * (1.0 - mu) ** 2
-
-	return (
-		-0.5 * (jnp.log(2.0 * jnp.pi) + dispersion + 3.0 * jnp.log(x) + 3.0 * jnp.log1p(-x))
-		- (x - mu) ** 2 / scale
+	# Written with 1 - mu = sigmoid(-eta) and x - mu = (1 - mu) - (1 - x): the direct form rounds
+	# mu to 1 once eta passes ~37, and the deviance and its gradient turn into 0/0.
+	log_scale = (
+		jnp.log(2.0)
+		+ dispersion
+		+ jnp.log(x)
+		+ jnp.log1p(-x)
+		+ 2.0 * log_sigmoid(eta)
+		+ 2.0 * log_sigmoid(-eta)
 	)
+	diff = sigmoid(-eta) - (1.0 - x)
+
+	return -0.5 * (
+		jnp.log(2.0 * jnp.pi) + dispersion + 3.0 * jnp.log(x) + 3.0 * jnp.log1p(-x)
+	) - diff**2 * jnp.exp(-log_scale)
 
 
 def _log_sb(x: Array, eta: Array, dispersion: Array) -> Array:

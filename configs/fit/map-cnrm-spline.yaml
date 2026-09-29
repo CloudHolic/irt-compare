@@ -1,0 +1,18 @@
+family: cnrm
+estimator: map
+experiment: irt-family-fit
+dataset: datasets/core300/cb2ec46b1d37
+transform:
+    kind: spline
+    # s = log(1 - x); the last knot must be 0. Below the first knot the exponent is held.
+    knots: {start: -8.0, stop: 0.0, num: 12}
+prior:
+    scale: 10.0
+map:
+    n_nodes: 21
+    steps: 3000
+    learning_rate: 0.005
+    final_lr_fraction: 0.02
+    scan_every: 20
+# person_mean_ols, or a finished EM run to start from, e.g. artifacts/cnrm-{response}
+init: person_mean_ols
