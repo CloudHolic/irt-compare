@@ -1,12 +1,4 @@
-"""Why a NUTS run does not mix: how much the log-likelihood's curvature moves with position.
-
-For every train person, H_p(theta) = -d2/dtheta2 [sum_i log k(x_pi | theta, tau_i)] + 1 (the
-N(0, 1) prior) is evaluated at the posterior mean and at +-1, +-2 reference posterior sds; the
-same for every item's b. A diagonal mass matrix absorbs a coordinate's curvature level but not
-its variation along the coordinate, so the spread max H / min H over that window is what a
-single step size cannot follow. The reference widths come from one converged run (Beta), so
-every family is probed over the same window. ZOI families only.
-"""
+"""Why a NUTS run does not mix: how much the log-likelihood's curvature moves with position."""
 
 from functools import partial
 
@@ -40,12 +32,18 @@ def person_and_item_curvature(
 		jnp.asarray(data.x),
 		jnp.where((data.x == 0.0) | (data.x == 1.0), 0.5, jnp.asarray(data.x)),
 	)
-	theta_mean, theta_width, b_width = (jnp.asarray(v) for v in (theta_mean, theta_width, b_width))
+	theta_mean_jax, theta_width_jax, b_width_jax = (
+		jnp.asarray(v) for v in (theta_mean, theta_width, b_width)
+	)
 
 	h_theta = jnp.stack(
 		[
 			_theta_hessian(
-				fitted.model, fitted.params, cells, theta_mean + o * theta_width, data.n_persons
+				fitted.model,
+				fitted.params,
+				cells,
+				theta_mean_jax + o * theta_width_jax,
+				data.n_persons,
 			)
 			+ 1.0
 			for o in OFFSETS
@@ -53,13 +51,15 @@ def person_and_item_curvature(
 	)
 	h_b = jnp.stack(
 		[
-			_b_hessian(fitted.model, fitted.params, cells, theta_mean, o * b_width, data.n_items)
+			_b_hessian(
+				fitted.model, fitted.params, cells, theta_mean_jax, o * b_width_jax, data.n_items
+			)
 			for o in OFFSETS
 		]
 	)
 
 	rows = []
-	for name, h, width in (("theta", h_theta, theta_width), ("b", h_b, b_width)):
+	for name, h, width in (("theta", h_theta, theta_width_jax), ("b", h_b, b_width_jax)):
 		h = np.asarray(h)
 		level = h[OFFSETS.index(0.0)] * np.asarray(width) ** 2
 		concave = h.min(axis=0) > 0.0

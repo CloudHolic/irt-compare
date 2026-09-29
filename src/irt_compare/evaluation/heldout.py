@@ -1,10 +1,4 @@
-"""Held-out log marginal likelihood of persons no fit has seen, and paired comparisons.
-
-For each test person, log int prod_i k(x_pi | theta, tau_i) phi(theta) dtheta with the item
-parameters fixed at the run's point estimate. theta is integrated on a dense global grid, plus a
-fine local grid around the person's grid argmax that replaces the global points it covers: some
-posteriors (the simplex's, near the ceiling) are narrower than any affordable global spacing.
-"""
+"""Held-out log marginal likelihood of persons no fit has seen, and paired comparisons."""
 
 from dataclasses import dataclass
 from functools import partial
@@ -75,11 +69,7 @@ def paired_difference(
 
 
 def _accumulate(fitted: Fitted, data: TrainData, theta_rows) -> Array:
-	"""sum over each person's cells of log k at per-cell theta rows, shape (persons, K).
-
-	Cells go through in fixed-size chunks; the last one is padded with cells of a dummy person
-	(index n_persons) that are dropped at the end, so one compiled kernel serves every chunk.
-	"""
+	"""sum over each person's cells of log k at per-cell theta rows, shape (persons, K)."""
 	n = data.x.size
 	pad = (-n) % CHUNK
 	person = np.concatenate([data.person, np.full(pad, data.n_persons)])

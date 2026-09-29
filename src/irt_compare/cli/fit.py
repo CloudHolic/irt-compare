@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import jax
+import jax.numpy as jnp
 import numpy as np
 import polars as pl
 import yaml
@@ -330,12 +331,12 @@ def _write_map(
 			"knots": knots.tolist(),
 			"raw": np.atleast_1d(p["transform"]).tolist(),
 			"exponent_at_knots": np.asarray(
-				model.transform.exponent(p["transform"], knots)
+				model.transform.exponent(jnp.asarray(p["transform"]), jnp.asarray(knots))
 			).tolist(),
 		}
 		(out / "transform.json").write_text(json.dumps(transform, indent=2), encoding="utf-8")
 	else:
-		tau = map_aghq.zoi_tau(p)
+		tau = map_aghq.zoi_tau({name: jnp.asarray(value) for name, value in p.items()})
 		items = {c: np.asarray(v) for c, v in zip(COORDS[model.family], tau, strict=True)}
 
 	pl.DataFrame({"item_idx": np.arange(data.n_items), **items}).write_parquet(

@@ -1,14 +1,4 @@
-"""MAP of the item parameters with theta marginalized by adaptive Gauss-Hermite quadrature.
-
-The likelihood and the item prior are the ones the paper-faithful fits use; only the estimator
-differs. That makes MAP the common ground for comparing families: it needs no mixing (a family
-whose posterior NUTS cannot explore still gets a well-defined point estimate) and it is the
-estimator the main pipeline uses.
-
-Minimized: -[sum_p log int prod_i k(x_pi | theta, tau_i) phi(theta) dtheta + log prior].
-Each step re-centres every person's nodes on their posterior mode (a grid scan every
-`scan_every` steps, Newton in between) and holds the nodes fixed while differentiating.
-"""
+"""MAP of the item parameters with theta marginalized by adaptive Gauss-Hermite quadrature."""
 
 from dataclasses import dataclass
 from functools import partial
@@ -95,7 +85,10 @@ class Model:
 	def log_prior(self, params: dict[str, Array], scale: float) -> Array:
 		"""ZOI: the paper's h(tau) at tau(z), no Jacobian (MAP). CNRM: N(0, scale) everywhere."""
 		if self.family == "cnrm":
-			return sum(norm.logpdf(v, scale=scale).sum() for v in jax.tree_util.tree_leaves(params))
+			return sum(
+				(norm.logpdf(v, scale=scale).sum() for v in jax.tree_util.tree_leaves(params)),
+				jnp.array(0.0),
+			)
 		return zoi.log_prior(zoi.ItemParams(*zoi_tau(params)), scale)
 
 

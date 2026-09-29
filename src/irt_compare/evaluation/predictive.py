@@ -1,13 +1,4 @@
-"""Posterior predictive checks near the ceiling.
-
-Per cell, theta is integrated over the person's posterior under that same fit (a 9-point
-Gauss-Hermite rule on its mean and sd), and the interior density is integrated numerically on
-a grid in t = logit(x). Everything comes from map_aghq.Model.cell_log_k: the endpoint masses
-are log k at x = 0 and x = 1, the interior density is log k at interior x.
-
-Outputs per cell: P(x = 1), P(x <= t) at given thresholds, and, for interior responses,
-E[u | interior] and Var[u | interior] of u = 1 - x and the PIT P(X <= x_obs | interior).
-"""
+"""Posterior predictive checks near the ceiling."""
 
 from functools import partial
 
@@ -118,7 +109,8 @@ def _chunk(
 	mass = (w * p_in).sum(axis=1)
 	u = jax.nn.sigmoid(-t)[:, None, None]
 	eu = (dens * u * w).sum(axis=(0, 2)) * dt / mass
-	eu2 = (dens * u**2 * w).sum(axis=(0, 2)) * dt / mass  # mass under the grid (x < 0.0025) is left out of the moments
+	eu2 = (dens * u**2 * w).sum(axis=(0, 2)) * dt / mass
+
 	t_obs = jnp.log(x / (1.0 - x))
 	pit = (cum_at(jnp.where(jnp.isfinite(t_obs), t_obs, t[0])) * w).sum(axis=1) / mass
 	return p_one, cdf, eu, eu2 - eu**2, pit

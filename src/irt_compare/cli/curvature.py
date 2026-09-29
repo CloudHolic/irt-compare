@@ -1,11 +1,4 @@
-"""Command-line entry point: the position-dependent curvature probe for NUTS runs.
-
-	python -m irt_compare.cli.curvature --dataset datasets/core300/<hash> --response acc \\
-		--widths artifacts/zoi-beta-acc \\
-		--run beta=artifacts/zoi-beta-acc --run simplex=artifacts/zoi-simplex-acc
-
-`--widths` is a converged NUTS run whose posterior sds set the probe window for every run.
-"""
+"""Command-line entry point: the position-dependent curvature probe for NUTS runs."""
 
 import argparse
 from pathlib import Path

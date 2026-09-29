@@ -1,11 +1,4 @@
-"""A finished run read back from its artifacts as a point fit: a Model and its parameters.
-
-Every family is evaluated through map_aghq.Model.cell_log_k, the same log k the fits use.
-
-	MAP  : items.parquet in tau coordinates (+ transform.json for the CNRM)
-	NUTS : posterior means, from items_summary.parquet or, for a subset of chains, from the draws
-	EM   : the CNRM's items.parquet (alpha, beta, sigma), paper's linear v
-"""
+"""A finished run read back from its artifacts as a point fit: a Model and its parameters."""
 
 import json
 from dataclasses import dataclass

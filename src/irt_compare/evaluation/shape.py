@@ -1,15 +1,4 @@
-"""How each fit spreads the distance to the ceiling, u = 1 - x, as its mean changes.
-
-Within an item the dispersion is fixed, so varying theta traces the family's own mean-spread
-law. Near the ceiling (v = 1 - mean small):
-
-	simplex : 1 - X ~ inverse Gaussian(v, 1/phi)       -> CV = sqrt(phi v)       (shrinks)
-	S_B     : 1 - X ~ lognormal                        -> CV constant
-	Beta    : 1 - X ~ Gamma(beta, alpha), beta ~ sqrt(v) -> CV ~ v^(-1/4)         (grows)
-
-Cells are grouped by item x quintile of a reference theta (one grouping for every fit), and the
-observed and predicted mean and CV of u are compared per group.
-"""
+"""How each fit spreads the distance to the ceiling, u = 1 - x, as its mean changes."""
 
 import numpy as np
 import polars as pl
@@ -58,7 +47,9 @@ def within_item_slope(grouped: pl.DataFrame, mean_col: str, cv_col: str) -> floa
 		lx=pl.col("lx") - pl.col("lx").mean().over("item"),
 		ly=pl.col("ly") - pl.col("ly").mean().over("item"),
 	)
-	return float((d["lx"] * d["ly"]).sum() / (d["lx"] ** 2).sum())
+	lx = np.asarray(d["lx"].to_numpy(), dtype=float)
+	ly = np.asarray(d["ly"].to_numpy(), dtype=float)
+	return float(np.dot(lx, ly) / np.dot(lx, lx))
 
 
 def summary(grouped: pl.DataFrame, names: list[str]) -> tuple[pl.DataFrame, pl.DataFrame]:
@@ -71,9 +62,9 @@ def summary(grouped: pl.DataFrame, names: list[str]) -> tuple[pl.DataFrame, pl.D
 			{
 				"source": name,
 				"slope": within_item_slope(grouped, f"{name}_mean", f"{name}_cv"),
-				"median_log_cv_ratio": float(ratio_cv.median()),
-				"median_abs_log_cv_ratio": float(ratio_cv.abs().median()),
-				"median_log_mean_ratio": float(ratio_mean.median()),
+				"median_log_cv_ratio": float(np.median(ratio_cv.to_numpy())),
+				"median_abs_log_cv_ratio": float(np.median(ratio_cv.abs().to_numpy())),
+				"median_log_mean_ratio": float(np.median(ratio_mean.to_numpy())),
 			}
 		)
 

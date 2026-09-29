@@ -1,7 +1,4 @@
-"""EM-based marginal maximum likelihood for the CNRM.
-
-Only observed (person, item) cells enter the sums: missing responses are ignorable.
-"""
+"""EM-based marginal maximum likelihood for the CNRM."""
 
 from dataclasses import dataclass
 from functools import partial

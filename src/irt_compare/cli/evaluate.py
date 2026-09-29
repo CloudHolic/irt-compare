@@ -1,17 +1,4 @@
-"""Command-line entry point: compares finished runs on the same dataset and response.
-
-	python -m irt_compare.cli.evaluate --dataset datasets/core300/<hash> --response acc \\
-		--run beta=artifacts/zoi-beta-map-acc --run cnrm-spline=artifacts/cnrm-spline-map-acc \\
-		--run "sb-nuts=artifacts/zoi-sb-acc#0,2,3" --reference beta --out reports/compare-acc
-
-Run directories are local copies of MLflow run artifacts (MAP, NUTS or EM). Writes:
-	heldout.csv          test-person log marginal likelihood, paired difference vs reference
-	heldout_breakdown.csv   the same, per key mode and without cells just under the ceiling
-	ppc.csv              observed vs predicted P(x = 1) and P(x <= t), train cells
-	pit.csv              deciles of the interior PIT
-	cv_law.csv, cv_by_distance.csv   mean-spread law of u = 1 - x per item x theta quintile
-	summary.md           all of the above as tables
-"""
+"""Command-line entry point: compares finished runs on the same dataset and response."""
 
 import argparse
 from pathlib import Path

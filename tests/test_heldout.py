@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import numpy as np
 
 from irt_compare.dataset import TrainData
@@ -23,7 +25,7 @@ def test_grid_marginal_matches_adaptive_quadrature(cnrm_cells) -> None:
 	aghq = cnrm_em.person_loglik(person, item, x, n_persons, em.alpha, em.beta, em.sigma, 61)
 	spec = TransformSpec("linear")
 	fitted = Fitted("em", Model("cnrm", spec), cnrm_params(em.alpha, em.beta, em.sigma, spec), "em")
-	data = TrainData(person, item, x, n_persons, n_items, np.arange(n_persons), "", None)  # type: ignore[arg-type]
+	data = TrainData(person, item, x, n_persons, n_items, np.arange(n_persons), "", Path())
 	np.testing.assert_allclose(person_posterior(fitted, data).log_marginal, aghq, atol=1e-6)
 
 
