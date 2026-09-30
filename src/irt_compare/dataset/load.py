@@ -65,3 +65,32 @@ def load_split(path: Path, response: str, split: str) -> TrainData:
 		dataset_hash=manifest["hash"],
 		dataset_path=path,
 	)
+
+
+def split_persons(data: TrainData, fraction: float, seed: int) -> tuple[TrainData, TrainData]:
+	"""(kept, held out): a random `fraction` of the persons and all their cells held out.
+
+	Used to tune settings on train data alone, so the test split stays untouched until the
+	final comparison. Persons are re-indexed from 0 within each part; items keep their indices.
+	"""
+	if not 0.0 < fraction < 1.0:
+		raise ValueError(f"fraction must be in (0, 1), got {fraction}")
+	rng = np.random.default_rng(seed)
+	held = np.zeros(data.n_persons, dtype=bool)
+	held[rng.choice(data.n_persons, size=round(fraction * data.n_persons), replace=False)] = True
+	return _subset(data, ~held), _subset(data, held)
+
+
+def _subset(data: TrainData, keep: np.ndarray) -> TrainData:
+	new_index = np.cumsum(keep) - 1
+	cell = keep[data.person]
+	return TrainData(
+		person=new_index[data.person[cell]],
+		item=data.item[cell],
+		x=data.x[cell],
+		n_persons=int(keep.sum()),
+		n_items=data.n_items,
+		person_idx=data.person_idx[keep],
+		dataset_hash=data.dataset_hash,
+		dataset_path=data.dataset_path,
+	)

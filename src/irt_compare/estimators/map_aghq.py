@@ -83,12 +83,15 @@ class Model:
 		return zoi.log_k(self.family, x, theta, zoi.ItemParams(*(col(t) for t in tau)))
 
 	def log_prior(self, params: dict[str, Array], scale: float) -> Array:
-		"""ZOI: the paper's h(tau) at tau(z), no Jacobian (MAP). CNRM: N(0, scale) everywhere."""
+		"""ZOI: the paper's h(tau) at tau(z), no Jacobian (MAP). CNRM: N(0, scale) everywhere,
+		plus the transform's smoothness penalty (P-spline only)."""
 		if self.family == "cnrm":
-			return sum(
+			assert self.transform is not None
+			flat = sum(
 				(norm.logpdf(v, scale=scale).sum() for v in jax.tree_util.tree_leaves(params)),
 				jnp.array(0.0),
 			)
+			return flat + self.transform.log_penalty(params["transform"])
 		return zoi.log_prior(zoi.ItemParams(*zoi_tau(params)), scale)
 
 

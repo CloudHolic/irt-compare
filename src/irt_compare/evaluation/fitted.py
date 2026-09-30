@@ -43,7 +43,9 @@ def load_run(name: str, path: Path, chains: tuple[int, ...] | None = None) -> Fi
 		items = pl.read_parquet(path / "items.parquet").sort("item_idx")
 		if family == "cnrm":
 			transform = json.loads((path / "transform.json").read_text(encoding="utf-8"))
-			spec = TransformSpec(transform["kind"], tuple(transform["knots"]))
+			spec = TransformSpec(
+				transform["kind"], tuple(transform["knots"]), transform.get("penalty", 0.0)
+			)
 			raw = np.asarray(transform["raw"]).reshape(spec.init().shape)
 			return Fitted(name, Model("cnrm", spec), _cnrm(items, raw), "map")
 		return Fitted(name, Model(family), _zoi(family, items), "map")

@@ -244,7 +244,11 @@ def _write_zoi(
 
 def _fit_map(resolved: dict[str, Any], data: TrainData) -> str:
 	family = resolved["family"]
-	spec = TransformSpec.from_config(resolved.get("transform")) if family == "cnrm" else None
+	spec = (
+		TransformSpec.from_config(_for_response(resolved.get("transform"), resolved["response"]))
+		if family == "cnrm"
+		else None
+	)
 	model = map_aghq.Model(family, spec)
 	config = map_aghq.MAPConfig(**resolved["map"], prior_scale=resolved["prior"]["scale"])
 	init = _map_init(resolved, data, model)
@@ -277,6 +281,13 @@ def _fit_map(resolved: dict[str, Any], data: TrainData) -> str:
 		)
 		tracking.log_artifacts(run_id, lambda out: _write_map(out, resolved, data, model, result))
 	return run_id
+
+
+def _for_response(transform: dict[str, Any] | None, response: str) -> dict[str, Any] | None:
+	"""A pspline `penalty` may be given per response ({acc: ..., score: ...}): pick this one."""
+	if transform is None or not isinstance(transform.get("penalty"), dict):
+		return transform
+	return {**transform, "penalty": transform["penalty"][response]}
 
 
 def _map_init(resolved: dict[str, Any], data: TrainData, model: map_aghq.Model) -> dict[str, Any]:
@@ -329,6 +340,7 @@ def _write_map(
 		transform = {
 			"kind": model.transform.kind,
 			"knots": knots.tolist(),
+			"penalty": model.transform.penalty,
 			"raw": np.atleast_1d(p["transform"]).tolist(),
 			"exponent_at_knots": np.asarray(
 				model.transform.exponent(jnp.asarray(p["transform"]), jnp.asarray(knots))

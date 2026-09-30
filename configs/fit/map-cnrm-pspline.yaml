@@ -1,0 +1,23 @@
+family: cnrm
+estimator: map
+experiment: irt-family-fit
+dataset: datasets/core300/cb2ec46b1d37
+transform:
+    kind: pspline
+    # s = log(1 - x), 41 knots every 0.25 down to 1 - x = 4.5e-5 (the data reach ~8e-5).
+    # Below the first knot the exponent is held, so the ceiling keeps a power-law tail.
+    knots: {start: -10.0, stop: 0.0, num: 41}
+    # Second-difference penalty on log q at the knots (a mapping {acc: .., score: ..} also works).
+    # irt_compare.cli.tune_penalty on a 20% person hold-out inside train: the held-out is flat
+    # for penalty <= 1 in both responses; one-SE rule on acc + score together gives 1.
+    penalty: 1.0
+prior:
+    scale: 10.0
+map:
+    n_nodes: 21
+    steps: 3000
+    learning_rate: 0.005
+    final_lr_fraction: 0.02
+    scan_every: 20
+# person_mean_ols, or a finished EM run to start from, e.g. artifacts/cnrm-{response}
+init: person_mean_ols
